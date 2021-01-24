@@ -26,8 +26,7 @@ class EdgeStationsModel(db.Model):
     edgeID = db.Column(db.Integer, primary_key = True)
     edge_name = db.Column(db.String(20), nullable = False)
     edge_ip = db.Column(db.String(15), nullable = False)
-    edge_port = db.Column(db.Integer, nullable = False)
-
+ 
 class ReadingsModel(db.Model):
     __tablename__ = 'readings'
     applicationID = db.Column(db.Integer, primary_key = True)
