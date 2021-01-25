@@ -2,12 +2,15 @@ from flask import Flask
 from flask_restful import Api, Resource, reqparse, abort, fields, marshal_with
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import create_engine
+import pymysql
+import secrets
 
 
 app = Flask(__name__)
 api = Api(app)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///db/database.db'
-
+#took out connection link for security reasons
+engine = "mysql+pymysql://testuser:capstone@ec2-34-239-255-254.compute-1.amazonaws.com/smartcity_application"
+app.config['SQLALCHEMY_DATABASE_URI'] = engine
 db = SQLAlchemy(app)
 @app.route("/")
 
@@ -19,7 +22,8 @@ class DeviceModel(db.Model):
     name = db.Column(db.String(20), nullable = False, unique = True)
     IDdevice = db.Column(db.Integer, primary_key = True)
     device_type = db.Column(db.String(20), nullable = False)
-    #device_edgeID = db.Column(db.Integer, db.ForeignKey('edge stations.edgeID'), nullable = False)
+    device_ip = db.Column(db.String(15), nullable = False)
+    device_edgeID = db.Column(db.Integer, db.ForeignKey('edgestations.edgeID'), nullable = False)
     #edgeID = db.relationship('EdgeStationsModel', backref = db.backref('posts', lazy = True))
 
 
@@ -28,19 +32,23 @@ class DeviceModel(db.Model):
 
 #Edge Stations Table
 class EdgeStationsModel(db.Model):
-    __tablename__ = 'edge stations'
+    __tablename__ = 'edgestations'
     edgeID = db.Column(db.Integer, primary_key = True)
     edge_name = db.Column(db.String(20), nullable = False, unique = True)
-    edge_ip = db.Column(db.String(15), nullable = False, unique = True)
+    edge_ip = db.Column(db.String(15), nullable = False)
+    edge_port = db.Column(db.Integer, nullable = False)
 
     def __repr__(self):
         return f"EdgeStation('{self.edgeID}', '{self.edge_name}', '{self.edge_ip}'')"
  
+#Readings Table
 '''
 class ReadingsModel(db.Model):
     __tablename__ = 'readings'
     applicationID = db.Column(db.Integer, primary_key = True)
-    
+'''
+
+'''  
 class EventsModel(db.Model):
     __tablename__ = 'events'
     applicationID = db.Column(db.Integer, primary_key = True)
@@ -63,7 +71,8 @@ device_update_args.add_argument("device_type", type=str, help="Type of device is
 device_fields = {
     'IDdevice' : fields.Integer,
     'name' : fields.String,
-    'device_type': fields.String
+    'device_type': fields.String,
+    'device_edgeID' : fields.Integer
 }
 
 
@@ -81,7 +90,8 @@ edge_update_args.add_argument("device_ip", type=str, help="IP of device is requi
 edgestation_fields = {
     'edgeID' : fields.Integer,
     'edge_name' : fields.String,
-    'edge_ip' : fields.String
+    'edge_ip' : fields.String,
+    'edge_port' : fields.Integer
 }
 
 
