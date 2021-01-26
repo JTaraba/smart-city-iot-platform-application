@@ -3,13 +3,13 @@ from flask_restful import Api, Resource, reqparse, abort, fields, marshal_with
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import create_engine
 import pymysql
+import sys
+sys.path.insert(1, '/Users/josh/Desktop/Capstone')
 import secrets
-
 
 app = Flask(__name__)
 api = Api(app)
-#took out connection link for security reasons
-engine = "mysql+pymysql://testuser:capstone@ec2-34-239-255-254.compute-1.amazonaws.com/smartcity_application"
+engine = "mysql+pymysql://{0}:{1}@{2}/{3}".format(secrets.user, secrets.password, secrets.host, secrets.name)
 app.config['SQLALCHEMY_DATABASE_URI'] = engine
 db = SQLAlchemy(app)
 @app.route("/")
