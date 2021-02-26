@@ -1,4 +1,4 @@
-from flask import Flask, render_template
+from flask import Flask, render_template, request, redirect
 from flask_restful import Api, Resource, reqparse, abort, fields, marshal_with
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import create_engine
@@ -30,9 +30,14 @@ class DeviceModel(db.Model):
     device_edgeID = db.Column(db.Integer, db.ForeignKey('edgestations.edgeID'), nullable = False)
     #edgeID = db.relationship('EdgeStationsModel', backref = db.backref('posts', lazy = True))
 
+    def __init__(self, name, device_type, device_ip, device_edgeID):
+        self.name = name
+        self.device_type = device_type
+        self.device_ip = device_ip
+        self.device_edgeID = device_edgeID
 
     def __repr__(self):
-        return f"Devices(name ={name}, device ID = {IDdevice}, device type = {device_type}, '{self.device_edgeID}') " 
+        return f"Devices(name ={name}, device type = {device_type}, '{self.device_edgeID}', device ip = {device_ip}) " 
 
 #Edge Stations Table
 class EdgeStationsModel(db.Model):
@@ -109,12 +114,14 @@ edge_update_args = reqparse.RequestParser()
 edge_update_args.add_argument("edge_name", type=str, help="Name of edege is required")
 edge_update_args.add_argument("device_ip", type=str, help="IP of device is required")
 
+db.create_all()
 
 device_fields = {
     'IDdevice' : fields.Integer,
     'name' : fields.String,
     'device_type': fields.String,
-    'device_edgeID' : fields.Integer
+    'device_edgeID' : fields.Integer,
+    'device_ip' :fields.String
 }
 
 
@@ -248,12 +255,16 @@ class ReturnPredictions(Resource):
         result = PredictionsModel.query.all()
         return result
 
-@app.route("/devices/add-new")
+@app.route('/devicecreation')
+def deviceAdd():
+    return render_template('put_devices.html')
+@app.route("/addDevice", methods = ['POST'])
 def addDevice():
-
-    return "<h1> Add a new device here <h1>"
-
-
+    new_device = DeviceModel(request.form['name'], request.form['device_type'], request.form['device_ip'], request.form['device_edgeid'])
+    db.session.add(new_device)
+    db.session.commit()
+    return redirect('/devices')
+            
 
 api.add_resource(ReturnEdgeStations, '/edgestations')
 api.add_resource(ReturnDevices, '/devices')

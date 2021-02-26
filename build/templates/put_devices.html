@@ -1,0 +1,17 @@
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+    <div class = "container">
+        <h1>Add new device </h1>
+        <br/>
+        <form action = "/addDevice" METHOD = "POST">
+            <input type ="text" placeholder = "Device Name" name = "name">
+            <input type ="text" placeholder = "Device Type" name = "device_type">
+            <input type ="text" placeholder = "Device Ip" name = "device_ip">
+            <input type ="text" placeholder = "Associated Edge" name = "device_edgeid">
+
+            <input type = "submit" value = "Add Device" class = "btn btn-secondary">
+
+        </form>
+    </div>
+
+{% endblock %}
