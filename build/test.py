@@ -1,13 +1,7 @@
 import requests
+import json
 
-BASE = "http://ec2-50-19-241-198.compute-1.amazonaws.com:8080/"
+url = ""
 
-
-response = requests.get(BASE + "devices/1")
-print(response.json())
-
-
-
-input()
-response = requests.get(BASE + "edgestation/1")
-print(response.json())
+response = requests.get(url)
+print(response.text)

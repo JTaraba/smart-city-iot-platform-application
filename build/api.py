@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 import pymysql
 import sys
 sys.path.insert(1, '/Users/josh/Desktop/Capstone')
-import secrets
+import secrets, requests, json
 
 app = Flask(__name__)
 api = Api(app)
@@ -271,6 +271,16 @@ api.add_resource(ReturnDevices, '/devices')
 api.add_resource(ReturnEvents, '/events')
 api.add_resource(ReturnPredictions, '/predictions')
 api.add_resource(ReturnReadings, '/readings')
+
+
+#accesing the API Gateway API on AWS
+@app.route('/trainingdata', methods = ['GET'])
+def getTrainingData():
+    req = requests.get("http://q1y7iby989.execute-api.us-east-2.amazonaws.com/test/gettrainedmodel")
+    print(req.content)
+    return
+
+
 
 if __name__ == "__main__":
     app.run(host = '0.0.0.0', port = 8080, debug = True)
