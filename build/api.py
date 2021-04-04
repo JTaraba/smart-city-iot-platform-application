@@ -2,13 +2,28 @@ from flask import Flask, render_template, request, redirect
 from flask_restful import Api, Resource, reqparse, abort, fields, marshal_with
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import create_engine
+from datetime import datetime
+from flask_cors import CORS
+
+import json
+import boto3
 import pymysql
 import sys
 sys.path.insert(1, '/Users/josh/Desktop/Capstone')
-import secrets, requests, json
+import secrets
+import zipfile
+import tarfile
+import requests
 
 app = Flask(__name__)
 api = Api(app)
+CORS(app)
+cors = CORS(app,resources = {
+    r"/*":{
+        "origins" : "*"
+    }
+})
+
 engine = "mysql+pymysql://{0}:{1}@{2}/{3}".format(secrets.user, secrets.password, secrets.host, secrets.name)
 app.config['SQLALCHEMY_DATABASE_URI'] = engine
 db = SQLAlchemy(app)
@@ -23,63 +38,71 @@ def HomePage():
 #Device Table
 class DeviceModel(db.Model):
     __tablename__ = 'devices'
-    name = db.Column(db.String(20), nullable = False, unique = True)
-    IDdevice = db.Column(db.Integer, primary_key = True)
-    device_type = db.Column(db.String(20), nullable = False)
-    device_ip = db.Column(db.String(15), nullable = False)
-    device_edgeID = db.Column(db.Integer, db.ForeignKey('edgestations.edgeID'), nullable = False)
-    #edgeID = db.relationship('EdgeStationsModel', backref = db.backref('posts', lazy = True))
-
-    def __init__(self, name, device_type, device_ip, device_edgeID):
-        self.name = name
-        self.device_type = device_type
-        self.device_ip = device_ip
-        self.device_edgeID = device_edgeID
+    deviceName = db.Column(db.String(20), nullable = False, unique = True)
+    deviceId = db.Column(db.Integer, primary_key = True)
+    deviceType = db.Column(db.String(20), nullable = False)
+    deviceIp = db.Column(db.String(15), nullable = False)
+    edgeStationID = db.Column(db.Integer, db.ForeignKey('edgestations.edgeStationID'), nullable = False)
+    #edgeStationID = db.relationship('EdgeStationsModel', backref = db.backref('posts', lazy = True))
+    
+    def __init__(self, deviceName, deviceType, deviceIp, edgeStationID):
+        self.deviceName = deviceName
+        self.deviceType = deviceType
+        self.deviceIp = deviceIp
+        self.edgeStationID = edgeStationID
 
     def __repr__(self):
-        return f"Devices(name ={name}, device type = {device_type}, '{self.device_edgeID}', device ip = {device_ip}) " 
+        return f"Devices(deviceName ={deviceName}, device ID = {deviceId}, device type = {deviceType}, device ip = {deviceIp}, edge station = {edgeStationID}) " 
 
 #Edge Stations Table
 class EdgeStationsModel(db.Model):
     __tablename__ = 'edgestations'
-    edgeID = db.Column(db.Integer, primary_key = True)
-    edge_name = db.Column(db.String(20), nullable = False, unique = True)
+    edgeStationID = db.Column(db.Integer, primary_key = True)
+    edgeName = db.Column(db.String(20), nullable = False, unique = True)
     edge_ip = db.Column(db.String(15), nullable = False)
     edge_port = db.Column(db.Integer, nullable = False)
 
+    def __init__(self, edgeName, edge_ip, edge_port):
+        self.edgeName = edgeName
+        self.edge_ip = edge_ip
+        self.edge_port = edge_port
+
     def __repr__(self):
-        return f"EdgeStation('{self.edgeID}', '{self.edge_name}', '{self.edge_ip}'')"
+        return f"EdgeStation('{self.edgeStationID}', '{self.edgeName}', '{self.edge_ip}', {self.edge_port}')"
  
 #Events Table
 class EventsModel(db.Model):
     __tablename__ = 'event'
-    idee = db.Column(db.Integer, primary_key = True)
-    event_id = db.Column(db.Integer, nullable = True, unique = True)
+    eventID = db.Column(db.Integer, primary_key = True, nullable = True, unique = True)
     event_name = db.Column(db.String(30), nullable = True, unique = True)
     event_condition_type = db.Column(db.String(50))
     event_condition = db.Column(db.Float)
-    IDdevice = db.Column(db.Integer, db.ForeignKey('devices.IDdevice'), nullable = False)
+    deviceId = db.Column(db.Integer, db.ForeignKey('devices.deviceId'), nullable = False)
     event_set_state = db.Column(db.String(4), nullable = False)
-    edgeID = db.Column(db.Integer, db.ForeignKey('edgestations.edgeID'))
+    edgeStationID = db.Column(db.Integer, db.ForeignKey('edgestations.edgeStationID'))
 
     def __repr__(self):
-        return f"Events(ID = {idee}, Event ID ={event_id}, Name = {event_name}, Condition Type = {event_condition_type}, Condition = {event_condition}, Device ID ={IDdevice}, State = {event_set_state}, Edge ID = {edgeID})"
+        return f"Events(Event ID ={eventID}, Name = {event_name}, Condition Type = {event_condition_type}, Condition = {event_condition}, Device ID ={deviceId}, State = {event_set_state}, Edge ID = {edgeStationID})"
 
 #Readings Table
 class ReadingsModel(db.Model):
     __tablename__ = 'readings'
     readingID = db.Column(db.Integer, primary_key = True)
-    IDdevice = db.Column(db.Integer, nullable = False)
-    device_ip = db.Column(db.String(19), nullable = False)
-    weight = db.Column(db.Float, nullable = False)
-    distance = db.Column(db.Float, nullable = False)
-    longitude = db.Column(db.String(20), nullable = False)
+    deviceIp = db.Column(db.String(30), nullable = False)
+    capacity = db.Column(db.Float, nullable = False)
+    longitude = db.Column(db.Float, nullable = False)
     latitude = db.Column(db.Float, nullable = False)
-    accuracy = db.Column(db.Float, nullable = False)
-    timestamp = db.Column(db.Float, nullable = False)
+    timestamp = db.Column(db.String(30), nullable = False)
+
+    def __init__(self, deviceIp, capacity, longitude, latitude, timestamp):
+        self.deviceIp = deviceIp
+        self.capacity = capacity
+        self.longitude = longitude
+        self.latitude = latitude
+        self.timestamp = timestamp
 
     def __repr__(self):
-        return f"Readings(ID = {readingID}, device ID = {IDdevice}, device ip = {device_ip}, weight = {weight}, distance = {distance}, longitude = {longitude}, latitude = {latitude}, accuracy = {accuracy}, timestamp = {timestamp})"
+        return f"Readings(ID = {readingID}, device ip = {deviceIp}, capacity = {capacity}, longitude = {longitude}, latitude = {latitude}, timestamp = {timestamp})"
 
 #Predictions Table
 class PredictionsModel(db.Model):
@@ -96,63 +119,59 @@ class PredictionsModel(db.Model):
 
 #device request parsers
 devices_put_args = reqparse.RequestParser()
-devices_put_args.add_argument("name", type=str, help="Name of device is required", required=True)
-devices_put_args.add_argument("device_type", type=str, help="Type of device is required", required=True)
+devices_put_args.add_argument("deviceName", type=str, help="Name of device is required", required=True)
+devices_put_args.add_argument("deviceType", type=str, help="Type of device is required", required=True)
 devices_put_args.add_argument("deviceID", type=int, help="ID of device is required", required=True)
 
 device_update_args = reqparse.RequestParser()
-device_update_args.add_argument("name", type=str, help="Name of device is required")
-device_update_args.add_argument("device_type", type=str, help="Type of device is required")
+device_update_args.add_argument("deviceName", type=str, help="Name of device is required")
+device_update_args.add_argument("deviceType", type=str, help="Type of device is required")
 
 #edge station request parsers
 edge_put_args = reqparse.RequestParser()
-edge_put_args.add_argument("edge_name", type=str, help="Name of edge is required", required=True)
+edge_put_args.add_argument("edgeName", type=str, help="Name of edge is required", required=True)
 edge_put_args.add_argument("edge_ip", type=str, help="Edge IP is required", required=True)
-edge_put_args.add_argument("edegeID", type=int, help="ID of device is required", required=True)
+edge_put_args.add_argument("edegeStationID", type=int, help="ID of device is required", required=True)
 
 edge_update_args = reqparse.RequestParser()
-edge_update_args.add_argument("edge_name", type=str, help="Name of edege is required")
-edge_update_args.add_argument("device_ip", type=str, help="IP of device is required")
+edge_update_args.add_argument("edgeName", type=str, help="Name of edege is required")
+edge_update_args.add_argument("deviceIp", type=str, help="IP of device is required")
 
-db.create_all()
 
 device_fields = {
-    'IDdevice' : fields.Integer,
-    'name' : fields.String,
-    'device_type': fields.String,
-    'device_edgeID' : fields.Integer,
-    'device_ip' :fields.String
+    'deviceId' : fields.Integer,
+    'deviceName' : fields.String,
+    'deviceType': fields.String,
+    'deviceIp' : fields.String,
+    'edgeStationID' : fields.Integer
 }
 
 
 edgestation_fields = {
-    'edgeID' : fields.Integer,
-    'edge_name' : fields.String,
+    'edgeStationID' : fields.Integer,
+    'edgeName' : fields.String,
     'edge_ip' : fields.String,
     'edge_port' : fields.Integer
 }
 
 events_field = {
     'idee': fields.Integer,
-    'event_id' : fields.Integer,
+    'eventID' : fields.Integer,
     'event_name' : fields.String,
     'event_condition_type' : fields.Float,
     'event_condition' : fields.String,
-    'IDdevice' : fields.Integer,
+    'deviceId' : fields.Integer,
     'event_set_state' : fields.String,
-    'edgeID' :fields.Integer
+    'edgeStationID' :fields.Integer
 }
 
 readings_field = {
     'readingID' : fields.Integer,
-    'IDdevice' : fields.Integer,
-    'device_ip' : fields.String,
-    'weight' : fields.Float,
-    'distance' : fields.Float,
-    'longitude' : fields.String,
+    'deviceIp' : fields.String,
+    'capacity' : fields.Float,
+    'longitude' : fields.Float,
     'latitude' : fields.Float,
-    'accuracy' : fields.Float,
-    'timestamp' : fields.Float
+    'timestamp' : fields.String
 }
 
 predictions_field = {
@@ -162,13 +181,13 @@ predictions_field = {
     'application_name' : fields.String,
     'readingID' : fields.Integer
 }
-
+db.create_all()
 
 #Classes for each component
 class Devices(Resource):
     @marshal_with(device_fields)
     def get(self, device_id):
-        result = DeviceModel.query.filter_by(IDdevice = device_id).first()
+        result = DeviceModel.query.filter_by(deviceId = device_id).first()
         if not result:
             abort(404, message = "Could not find device")
         return result
@@ -176,10 +195,10 @@ class Devices(Resource):
     @marshal_with(device_fields)
     def put(self, device_id):
         args = devices_put_args.parse_args()
-        result = DeviceModel.query.filter_by(IDdevice = device_id).first()
+        result = DeviceModel.query.filter_by(deviceId = device_id).first()
         if result:
             abort(409, message = "Device ID exists")
-        device = DeviceModel(name = args['name'], IDdevice = device_id, device_type = args['device_type'])
+        device = DeviceModel(name = args['deviceName'], deviceId = device_id, deviceType = args['deviceType'])
         db.session.add(device)
         db.session.commit()
         return device, 201
@@ -187,13 +206,13 @@ class Devices(Resource):
     @marshal_with(device_fields) 
     def patch(self, device_id):
         args = device_update_args.parse_args()
-        result = DeviceModel.query.filter_by(IDdevice = device_id).first()
+        result = DeviceModel.query.filter_by(deviceId = device_id).first()
         if not result:
             abort(404, message = "No such device, update failed") 
-        if args['name']:
-            result.name = args['name']
-        if args['device_type']:
-            result.device_type = args['device_type']
+        if args['deviceName']:
+            result.name = args['deviceName']
+        if args['deviceType']:
+            result.deviceType = args['deviceType']
 
         db.session.commit()
 
@@ -202,7 +221,7 @@ class Devices(Resource):
 class EdgeStation(Resource):
     @marshal_with(edgestation_fields)
     def get(self, edgestation_id):
-        result = EdgeStationsModel.query.filter_by(edgeID = edgestation_id).first()
+        result = EdgeStationsModel.query.filter_by(edgeStationID = edgestation_id).first()
         if not result:
             abort(404, message = "No such edge station")
         return result
@@ -210,16 +229,25 @@ class EdgeStation(Resource):
     @marshal_with(edgestation_fields)
     def put(self, edgestation_id):
         args = edge_put_args.parse_args()
-        result = EdgeStationsModel.query.filter_by(edgeID = edgestation_id).first()
+        result = EdgeStationsModel.query.filter_by(edgeStationID = edgestation_id).first()
         if result:
             abort(409, message = "Edgestation already exists")
-        edgestation = DeviceModel(edge_name = args['edge_name'], edgeID = edgestation_id, edge_ip = args['edge_ip'])
+        edgestation = DeviceModel(edgeName = args['edgeName'], edgeStationID = edgestation_id, edge_ip = args['edge_ip'])
         db.session.add(edgestation)
         db.session.commit()
         return edgestation, 201
 
+class Readings(Resource):
+    @marshal_with(readings_field)
+    def get(self, deviceIp):
+        readingID = ReadingsModel.readingID
+        capacity = ReadingsModel.capacity
+        result = ReadingsModel.query.order_by(readingID.desc()).first()
+        if not result:
+            abort(404, message = "No device with Ip: " + deviceIp)
+        return result
 
-
+api.add_resource(Readings, '/readings/<string:deviceIp>')
 api.add_resource(Devices, '/devices/<int:device_id>')
 api.add_resource(EdgeStation, '/edgestation/<int:edgestation_id>')
 
@@ -260,11 +288,30 @@ def deviceAdd():
     return render_template('put_devices.html')
 @app.route("/addDevice", methods = ['POST'])
 def addDevice():
-    new_device = DeviceModel(request.form['name'], request.form['device_type'], request.form['device_ip'], request.form['device_edgeid'])
+    new_device = DeviceModel(request.form['deviceName'], request.form['deviceType'], request.form['deviceIp'], request.form['edgeStationID'])
+    #this also creates and registers the device in the cloud storage 
+    url = "https://jwn9lb7938.execute-api.us-east-2.amazonaws.com/test/registerDevice"
+    aDevice = {
+        "deviceName" : request.form['deviceName'],
+        "deviceIP" : request.form['deviceIp'],
+        "deviceType" : request.form['deviceType']
+    }
+    response = requests.request("PUT", url, data = aDevice)
+    #stores the new device into the application database 
     db.session.add(new_device)
     db.session.commit()
     return redirect('/devices')
-            
+
+@app.route('/edgecreation')
+def edgeAdd():
+    return render_template('put_edges.html')
+@app.route("/addEdge", methods = ['POST'])
+def addEdge():
+    new_edge = EdgeStationsModel(request.form['edgeName'], request.form['edge_ip'], request.form['edge_port'])
+    db.session.add(new_edge)
+    db.session.commit()
+    return redirect('/edgestations')
+
 
 api.add_resource(ReturnEdgeStations, '/edgestations')
 api.add_resource(ReturnDevices, '/devices')
@@ -273,14 +320,69 @@ api.add_resource(ReturnPredictions, '/predictions')
 api.add_resource(ReturnReadings, '/readings')
 
 
-#accesing the API Gateway API on AWS
-@app.route('/trainingdata', methods = ['GET'])
-def getTrainingData():
-    req = requests.get("http://q1y7iby989.execute-api.us-east-2.amazonaws.com/test/gettrainedmodel")
-    print(req.content)
-    return
+#s3 Get Trained Model File from cloud bucket
+s3 = boto3.client("s3")
+path = '/home/ubuntu/smart-city-iot-platform-application/models/'
 
+@app.route('/getTrainedModel', methods = ["GET"])
+def getTrainedModel():
+    bucket = 'sagemaker-us-east-2-583938224360'
+    filePath = 'smartcity-waste-management-garbage-level-training-data/output/garbage-bin-level-forecaster-2021-02-16-16-57-57-804/output/model.tar.gz'
 
+    try:
+        response = s3.get_object(Bucket = bucket, Key = filePath)
+        payload = response['Body'].read()
+        downloadPayload = s3.download_file(bucket, filePath, path + 'model.tar.gz')
+        #print(open('model.zip').read())
+        tf = tarfile.open(path + 'model.tar.gz')
+        tf.extractall(r'/home/ubuntu/smart-city-iot-platform-application/models/model')
+        
+        return{
+            'response_code' : 200,
+            'message' : 'Succesffuly downloaded the model file from the cloud.'
+        }
+    except Exception as e:
+        return{
+            'response_code' : 404,
+            'message' : repr(e)
+        }
+
+# get the devices readings from lambda
+@app.route('/deviceReadings', methods = ["POST"])
+def putDeviceReadings():
+    req = request.get_json()
+    readingApplicationName = req['applicationName']
+    readingEdgeName = req['edgeName']
+    readingDeviceType = req['deviceType']
+    readingDeviceName = req['deviceName']
+    readingDeviceIp = req['deviceIP']
+    readingCapacity = req['capacity']
+    readingLongitude = req['longitude']
+    readingLatitude = req['latitude']
+    readingTimestamp = req['timestamp']
+    
+    newReading = ReadingsModel(readingDeviceIp, readingCapacity, readingLongitude, readingLatitude, readingTimestamp)
+    db.session.add(newReading)
+    db.session.commit()
+    return redirect('/readings')
+
+x = datetime.now()
+now = x.strftime('%Y-%m-%d-%H-%M-%S')
+
+@app.route('/sendEvent', methods = ['GET'])
+def sendEvent():
+    url = "https://jwn9lb7938.execute-api.us-east-2.amazonaws.com/test/modelTrainingTriggerHandler"
+    data = {
+        "freq" : "10S",
+        "training_job_name" : "garbage-bin-level-forecaster-" + now,
+        "context_length" : 60480,
+        "s3_bucket_name" : "sagemaker-us-east-2-583938224360",
+        "s3_bucket_application_base_uri" : "smartcity-waste-management-garbage-level-training-data",
+        "prediction_length" : 60480
+    }
+    send = requests.post(url, json = data )
+    final = print(send)
+    return data
 
 if __name__ == "__main__":
     app.run(host = '0.0.0.0', port = 8080, debug = True)
