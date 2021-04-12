@@ -14,6 +14,7 @@ import secrets
 import zipfile
 import tarfile
 import requests
+import sagemaker
 
 app = Flask(__name__)
 api = Api(app)
@@ -38,10 +39,10 @@ def HomePage():
 #Device Table
 class DeviceModel(db.Model):
     __tablename__ = 'devices'
-    deviceName = db.Column(db.String(20), nullable = False, unique = True)
+    deviceName = db.Column(db.String(128), nullable = False, unique = True)
     deviceId = db.Column(db.Integer, primary_key = True)
-    deviceType = db.Column(db.String(20), nullable = False)
-    deviceIp = db.Column(db.String(15), nullable = False)
+    deviceType = db.Column(db.String(128), nullable = False)
+    deviceIp = db.Column(db.String(128), nullable = False)
     edgeStationID = db.Column(db.Integer, db.ForeignKey('edgestations.edgeStationID'), nullable = False)
     #edgeStationID = db.relationship('EdgeStationsModel', backref = db.backref('posts', lazy = True))
     
@@ -52,7 +53,7 @@ class DeviceModel(db.Model):
         self.edgeStationID = edgeStationID
 
     def __repr__(self):
-        return f"Devices(deviceName ={deviceName}, device ID = {deviceId}, device type = {deviceType}, device ip = {deviceIp}, edge station = {edgeStationID}) " 
+        return f"Devices(deviceName = {deviceName}, device ID = {deviceId}, device type = {deviceType}, device ip = {deviceIp}, edge station = {edgeStationID})" 
 
 #Edge Stations Table
 class EdgeStationsModel(db.Model):
@@ -82,7 +83,7 @@ class EventsModel(db.Model):
     edgeStationID = db.Column(db.Integer, db.ForeignKey('edgestations.edgeStationID'))
 
     def __repr__(self):
-        return f"Events(Event ID ={eventID}, Name = {event_name}, Condition Type = {event_condition_type}, Condition = {event_condition}, Device ID ={deviceId}, State = {event_set_state}, Edge ID = {edgeStationID})"
+        return f"Events('{self.eventID}', '{self.event_name}', '{self.event_condition_type}', '{self.event_condition}', '{self.deviceId}', '{event_set_state}', '{edgeStationID}')"
 
 #Readings Table
 class ReadingsModel(db.Model):
@@ -239,15 +240,23 @@ class EdgeStation(Resource):
 
 class Readings(Resource):
     @marshal_with(readings_field)
-    def get(self, deviceIp):
+    def get(self, readingIp):
         readingID = ReadingsModel.readingID
         capacity = ReadingsModel.capacity
-        result = ReadingsModel.query.order_by(readingID.desc()).first()
+        result = ReadingsModel.query.filter_by(deviceIp = readingIp).order_by(readingID.desc()).first()
         if not result:
-            abort(404, message = "No device with Ip: " + deviceIp)
+            abort(404, message = "No device with that ip")
         return result
 
-api.add_resource(Readings, '/readings/<string:deviceIp>')
+class ReadingsIp(Resource): 
+    @marshal_with(readings_fields)
+    def get(self, readingIp):
+        result = ReadingsModel.query.filter_by(deviceIp = readingIp).all()
+        if not result:
+            abort(404, message = "no device with that ip")
+
+api.add_resource(ReadingsIp, '/readings/<string:readingIp>')
+api.add_resource(Readings, '/readings/<string:deviceIp>/last')
 api.add_resource(Devices, '/devices/<int:device_id>')
 api.add_resource(EdgeStation, '/edgestation/<int:edgestation_id>')
 
@@ -323,6 +332,7 @@ api.add_resource(ReturnReadings, '/readings')
 #s3 Get Trained Model File from cloud bucket
 s3 = boto3.client("s3")
 path = '/home/ubuntu/smart-city-iot-platform-application/models/'
+sagemaker_session = sagemaker.Session()
 
 @app.route('/getTrainedModel', methods = ["GET"])
 def getTrainedModel():
@@ -366,23 +376,56 @@ def putDeviceReadings():
     db.session.commit()
     return redirect('/readings')
 
-x = datetime.now()
-now = x.strftime('%Y-%m-%d-%H-%M-%S')
 
-@app.route('/sendEvent', methods = ['GET'])
+
+@app.route('/modelTrainingTriggerHandler', methods = ['GET'])
 def sendEvent():
+    dt = datetime.now()
+    now = dt.strftime('%Y-%m-%d-%H-%M-%S')
     url = "https://jwn9lb7938.execute-api.us-east-2.amazonaws.com/test/modelTrainingTriggerHandler"
-    data = {
+    config = {
         "freq" : "10S",
         "training_job_name" : "garbage-bin-level-forecaster-" + now,
         "context_length" : 60480,
         "s3_bucket_name" : "sagemaker-us-east-2-583938224360",
         "s3_bucket_application_base_uri" : "smartcity-waste-management-garbage-level-training-data",
-        "prediction_length" : 60480
+        "prediction_length" : 60480,
+        'arn_role': 'arn:aws:iam::583938224360:role/sagemakerfullaccess'
     }
-    send = requests.post(url, json = data )
+    send = requests.post(url, json = config )
+    sagemaker_session = sagemaker.Session()
+    sagemaker_session.wait_for_job(config['training_job_name'])
+    
+    print('Creating an endpoint using \'', config['training_job_name'], '\' as the training job')
+    endpoint_name = sagemaker_session.endpoint_from_job(
+        job_name=config['training_job_name'],
+        initial_instance_count=1,
+        instance_type='ml.m4.xlarge',
+        role=config['arn_role']
+    )
+    # once the endpoint has been created, make the predictor object and save it to be reused later when a prediction is needed
+    print('\nEndpoint has been created with the following name ', endpoint_name)
+    predictor = sagemaker.predictor.Predictor(
+        endpoint_name,
+        sagemaker_session=sagemaker_session,
+        serializer=sagemaker.serializers.IdentitySerializer(content_type='application/json')
+    )
     final = print(send)
-    return data
+    return config
+
+def predict(predictor):
+    ts = [1,2,3]
+    instance = {
+        'start' : '2014-01-01 00:00:00',
+        'target' : ts
+    }
+    data = {'instances': [instance]}
+    request = json.dumps(data).encode('utf-8')
+    prediction = json.loads(predictor.predict(request).decode('utf-8'))
+    predictor.delete_endpoint()
+
+
+
 
 if __name__ == "__main__":
     app.run(host = '0.0.0.0', port = 8080, debug = True)
