@@ -5,6 +5,7 @@ from sqlalchemy import create_engine
 from datetime import datetime
 from flask_cors import CORS
 
+import numpy as np
 import json
 import boto3
 import pymysql
@@ -333,6 +334,7 @@ api.add_resource(ReturnReadings, '/readings')
 s3 = boto3.client("s3")
 path = '/home/ubuntu/smart-city-iot-platform-application/models/'
 sagemaker_session = sagemaker.Session()
+predictor = None
 
 @app.route('/getTrainedModel', methods = ["GET"])
 def getTrainedModel():
@@ -384,12 +386,12 @@ def sendEvent():
     now = dt.strftime('%Y-%m-%d-%H-%M-%S')
     url = "https://jwn9lb7938.execute-api.us-east-2.amazonaws.com/test/modelTrainingTriggerHandler"
     config = {
-        "freq" : "10S",
+        "freq" : "1H",
         "training_job_name" : "garbage-bin-level-forecaster-" + now,
-        "context_length" : 60480,
+        "context_length" : 168,
         "s3_bucket_name" : "sagemaker-us-east-2-583938224360",
         "s3_bucket_application_base_uri" : "smartcity-waste-management-garbage-level-training-data",
-        "prediction_length" : 60480,
+        "prediction_length" : 168,
         'arn_role': 'arn:aws:iam::583938224360:role/sagemakerfullaccess'
     }
     send = requests.post(url, json = config )
@@ -410,21 +412,30 @@ def sendEvent():
         sagemaker_session=sagemaker_session,
         serializer=sagemaker.serializers.IdentitySerializer(content_type='application/json')
     )
-    final = print(send)
     return config
 
-def predict(predictor):
-    ts = [1,2,3]
-    instance = {
-        'start' : '2014-01-01 00:00:00',
-        'target' : ts
-    }
-    data = {'instances': [instance]}
-    request = json.dumps(data).encode('utf-8')
-    prediction = json.loads(predictor.predict(request).decode('utf-8'))
-    predictor.delete_endpoint()
 
-
+class Predictions(Resource):
+    def get(self, readingIp):
+        cap = ReadingsModel.query.with_entities(ReadingsModel.capacity).filter_by(deviceIp = readingIp).all()
+        capArray = np.array(cap)
+        if (predictor == None):
+            return "Predictor is null"
+        else:
+            ts = capArray
+            instance = {
+                'start' : '2021-01-01 00:00:00',
+                'target' : ts
+            }
+            data = {"instances" : [instance]}
+            request = json.dumps(data).encode('utf-8')
+            prediction = json.loads(predictor.predict(request).decode('utf-8'))
+            predictor.delete_endpoint()
+        if not cap:
+            abort(404, message = "No predictions")
+        return capArray
+    
+api.add_resource(Predictions, '/prediction/<string:readingIp>')
 
 
 if __name__ == "__main__":
